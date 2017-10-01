@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<meta http-equiv="Content-type" content="application/x-javascript; charset=UTF-8"/>
+<style>
+text {
+    font-size: 11px;
+    
+}
+text.parent {
+    fill: #1f77b4;
+}
+text {
+    font: 10px sans-serif;
+}
+/*.text {
+  cursor: pointer;
+}
+ */
+ text:hover {
+    /*color: #FF0000; */
+    font-size: 12px;
+    stroke: steelblue;
+    stroke-width: 0.5px;
+    text-decoration: underline;
+}
+
+
+circle {
+    fill: #ffffff;
+    stroke: #999;
+    pointer-events: all;
+}
+circle.parent {
+    fill: #00ffcc;
+    fill-opacity: .1;
+    stroke: steelblue;
+}
+circle.parent:hover {
+    stroke: #ff7f0e;
+    stroke-width: .5px;
+}
+circle.child {
+    pointer-events: none;
+}
+.node {
+    cursor: pointer;
+}
+
+/*Node hover*/
+ /*.node {
+    cursor: pointer;
+}
+.node:hover {
+    stroke: #000;
+    stroke-width: 1.5px;
+}
+.node--leaf {
+    fill: white;
+}
+*/
+
+/*Circle text*/
+    .label {
+        font: 11px "Helvetica Neue", Helvetica, Arial, sans-serif;
+        text-anchor: middle;
+        text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff, 0 -1px 0 #fff;
+    }
+    
+    .label,
+    .node--root,
+    .node--leaf {
+        pointer-events: none;
+    }
+    
+    .arc-path {
+        visibility: hidden;
+    }
+</style>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="https://rawgit.com/musically-ut/d3-circle-text/master/circle-text/circle-text.js"></script>
+<svg width="960" height="960"></svg>
+<script>
+var w = 960,
+    //h = 800,
+    r = 960,
+    x = d3.scale.linear().range([0, r]),
+    y = d3.scale.linear().range([0, r]),
+    node,
+    root,
+    format = d3.format(",d");
+
+var focus = root,
+    view;
+
+var circleText = d3.circleText()
+                    .method('align')
+                    .spacing('exact')
+                    .value(function(d) {return d.key; })
+                    .radius(function(d) {return d.r - 5;})                    
+                    .fontSize('100%');
+
+
+
+//Declare SVG attributes
+var svg = d3.select("svg"),
+	margin = 20,
+	diameter = +svg.attr("width"),
+	g = svg.append("g").attr("transform", "translate(" + diameter / 2 + "," + diameter / 2 + ")");
+
+	//Declare the D3 layout type and set accessor functions
+var pack = d3.layout.pack()
+    .size([diameter-margin, diameter-margin])
+    .children(function(d) {
+        return d.values; // accessor for children
+    })
+    .value(function(d) {
+        return d.values; // accessor for values
+    })
+	
+	.padding(2);
+
+//Get data
+d3.json("http://drupal-dev.library.oregonstate.edu/keywords-json#overlay-context=keywords_json", function(error, data) {
+    node = root=data;
+    data.forEach(function(d) {
+        d.tid = +d.tid; //convert string to numeric
+		d.size=+d.size;
+    });
+root = d3.layout.hierarchy(root)
+      .value(function(d) { return d.size; })
+      .sort(function(a, b) { return b.value - a.value; });
+ 
+ 
+ 
+var termParent = d3.nest()
+        .key(function(d) {
+            return d.Parent
+        })
+        .key(function(d) {
+            return d.name;
+        })
+        .rollup(function(leaves) {
+		    //leaves.forEach(function (d) {
+            //return leaves.length*d.size;
+			//});
+			return d3.sum(leaves, function(d) { return d.size; });
+			//return leaves.length;
+        })
+        .entries(data);
+		
+console.log(termParent);
+
+var keywordTotal = {
+        key: "Keywords",
+        values: termParent
+    };
+
+//Build a lookup table to pass frequency to 'xlink'
+var idByOrg = {};
+data.forEach(function (d) {
+        idByOrg[d.name] = d.tid;
+		idByOrg[d.Parent] = d.tid;
+    });
+var rsize={}
+       data.forEach(function (d) {
+        rsize[d.name] = d.size;
+		rsize[d.Parent] = d.size;
+    });  	
+
+
+var node = svg.selectAll(".node")
+        .data(pack.nodes(keywordTotal))
+        .enter().append("g")
+        .attr("class", function(d) {
+            return d.children ? "node" : "leaf node"; });
+//Create circles 
+    node.append("circle")
+        .attr("r", function(d) {
+          return d.r;
+        })
+         .attr("class", function(d) { return d.children ? "parent" : "child"; })
+         .attr("cx", function(d) { return d.x;})
+        .attr("cy", function(d) { return d.y;})
+        .on("click", function(d) { zoom(node == d ? root : d),  d3.event.stopPropagation(); 
+        });
+    
+//Label the circles/nodes
+    node.append("svg:a")
+        .attr("xlink:href", function (d) { //hyperlinks
+        //console.log(d);
+        var entityid = idByOrg[d.key]; //accessing lookup table
+        return "http://drupal-dev.library.oregonstate.edu/taxonomy/term/" + entityid
+    })
+        .filter(function (d) { //Don't show Country names on nodes
+        return !d.children; //(use d3-circle-text to place along arc)
+    })
+        .attr("target", "_blank")
+        .append("text")
+        .classed('leaf-label', true)
+        .attr("dy", ".3em")
+        .style("text-anchor", "middle")
+        .attr("dy", ".3em")
+        .style("text-anchor", "middle")
+        .attr("x", function (d) {
+        return d.x;
+    })
+        .attr("y", function (d) {
+        return d.y;
+    })
+   .text(function (d) {
+        if (d.key.length > 5) {
+            return d.key.substring(0, 5) ;
+        } else {
+            return d.key;
+        }
+    });
+
+//Tooltip 
+    node.append("title")
+        .text(function(d) {
+            return d.key + (!d.children ? "" : ": " + format(d.value));
+        });
+
+            var gTexts = svg.selectAll('g.label')
+                .data(pack.nodes(keywordTotal)) 
+                .enter()
+                .append('g')
+                .classed('label', true)
+                .attr('transform', function(d) {
+                    return 'translate(' + d.x + ',' + d.y + ')';
+                    });
+
+            gTexts.filter(function(d) { 
+                    return !!d.children;
+                })
+                .call(circleText)
+                //.style('fill', 'white');
+
+    svg.on("click", function(d, i) {
+        zoom(d)
+    }); 
+});
+var j=0;
+function zoom(d, i) {
+    if(d.r<470){
+        j=j+1;
+    }else{
+        backRoot=d;
+	}
+	if(j%2==0){
+        d=backRoot;
+    }
+    var k = r / d.r / 2;
+
+	console.log("j::"+j+"--"+d.children+"--"+i);
+    x.domain([d.x - d.r, d.x + d.r]);
+    y.domain([d.y - d.r, d.y + d.r]);
+    var t = svg.transition()
+        .duration(d3.event.altKey ? 7500 : 750);
+
+    t.selectAll("circle")
+        .attr("cx", function(d) {
+            return x(d.x);
+        })
+        .attr("cy", function(d) {
+            return y(d.y);
+        })
+        .attr("r", function(d) {
+            return k * d.r;
+        });
+    
+    circleText.radius(function (d) { return k * d.r - 5.0; });
+    t.selectAll('g.label')
+        .attr('transform', function (d) { 
+            return "translate(" + x(d.x) + ',' + y(d.y) + ')';
+        })
+        .filter(function (d) { return !!d.children; })
+        .call(circleText);
+
+    t.selectAll(".leaf-label")
+        .attr("x", function(d) {
+           return x(d.x);
+        })
+        .attr("y", function(d) {
+            return y(d.y);
+        })
+        .style("opacity", function(d) {return k * d.r > 20 ? 1 : 0; })
+        .text(function (d) {var lm=k*d.r;
+		if(lm > 30){
+			if (d.key.length > 20) {
+				return d.key.substring(0, 20)+"..." ;
+			} else {
+				return d.key;
+			}
+		}
+		else{
+		if (d.key.length > 5) {
+				return d.key.substring(0, 5)+"." ;
+			} else {
+				return d.key;
+			}
+		}
+    });
+    node = d;
+    d3.event.stopPropagation();
+   
+}
+
+d3.select(self.frameElement).style("height", diameter + "px");
+</script>
+
